@@ -8,7 +8,11 @@ enum layer_number {
 };
 
 /* Custom keycodes shared across keymaps. */
+enum custom_keycodes {
+  ALT_TAB = SAFE_RANGE,
+};
 
+static int8_t alt_tab_layer = -1;
 
 const uint16_t PROGMEM keymaps[][MATRIX_ROWS][MATRIX_COLS] = {
 
@@ -50,7 +54,7 @@ const uint16_t PROGMEM keymaps[][MATRIX_ROWS][MATRIX_COLS] = {
  */
 [_LOWER] = LAYOUT(
   XXXXXXX,  XXXXXXX,  XXXXXXX,  XXXXXXX,  XXXXXXX,  XXXXXXX,                      XXXXXXX,  XXXXXXX,  XXXXXXX,  XXXXXXX,  XXXXXXX,  XXXXXXX,
-  LALT(KC_TAB),  KC_EXLM,  KC_AT,    KC_HASH,  KC_DLR,   KC_PERC,                      KC_CIRC,  KC_AMPR,  KC_ASTR,  KC_LPRN,  KC_RPRN,  XXXXXXX,
+  ALT_TAB,  KC_EXLM,  KC_AT,    KC_HASH,  KC_DLR,   KC_PERC,                      KC_CIRC,  KC_AMPR,  KC_ASTR,  KC_LPRN,  KC_RPRN,  XXXXXXX,
   XXXXXXX,  KC_1,     KC_2,     KC_3,     KC_4,     KC_5,                         KC_PIPE,  KC_UNDS,  KC_PLUS,  KC_LBRC,  KC_RBRC,  KC_TILD,
   XXXXXXX,  KC_6,     KC_7,     KC_8,     KC_9,     KC_0,    XXXXXXX,     XXXXXXX,  KC_BSLS,  KC_MINS,  KC_EQL,   KC_LCBR,  KC_RCBR,  KC_GRV,
                                 XXXXXXX,  XXXXXXX,  XXXXXXX,  XXXXXXX,  XXXXXXX,  XXXXXXX,  XXXXXXX,  XXXXXXX
@@ -100,8 +104,17 @@ const uint16_t PROGMEM keymaps[][MATRIX_ROWS][MATRIX_COLS] = {
 ),
 };
 
+
+__attribute__((weak)) layer_state_t layer_state_set_keymap(layer_state_t state) { return state; }
+
 layer_state_t layer_state_set_user(layer_state_t state) {
-  return update_tri_layer_state(state, _LOWER, _RAISE, _ADJUST);
+    state = layer_state_set_keymap(state);
+    state = update_tri_layer_state(state, _LOWER, _RAISE, _ADJUST);
+    if (alt_tab_layer >= 0 && !layer_state_cmp(state, alt_tab_layer)) {
+        unregister_code(KC_LALT);
+        alt_tab_layer = -1;
+    }
+    return state;
 }
 
 //SSD1306 OLED update loop, make sure to enable OLED_ENABLE=yes in rules.mk
@@ -141,12 +154,26 @@ bool oled_task_user(void) {
 }
 #endif // OLED_ENABLE
 
+__attribute__((weak)) bool process_record_keymap(uint16_t keycode, keyrecord_t *record) { return true; }
+
 bool process_record_user(uint16_t keycode, keyrecord_t *record) {
-  if (record->event.pressed) {
-#ifdef OLED_ENABLE
-    set_keylog(keycode, record);
-#endif
-    // set_timelog();
-  }
-  return true;
+    if (!process_record_keymap(keycode, record)) {
+        return false;
+    }
+    switch (keycode) {
+        /* Alt+Tab that holds Alt until current layer is released: */
+        case ALT_TAB:
+            if (record->event.pressed) {
+                if (alt_tab_layer < 0) {
+                    alt_tab_layer = layer_switch_get_layer(record->event.key);
+                    register_code(KC_LALT);
+                }
+                register_code(KC_TAB);
+            } else {
+                unregister_code(KC_TAB);
+            }
+            return false;
+        default:
+            return true;
+    }
 }
